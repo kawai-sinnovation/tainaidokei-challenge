@@ -589,7 +589,8 @@ function renderPlayer() {
   if (renderedPhase === player.phase) return;
   renderedPhase = player.phase;
   if (player.phase === "entry") paintEntry();
-  else if (player.phase === "wait" || player.phase === "ready") paintWait();
+  else if (player.phase === "joined") paintJoined();
+  else if (player.phase === "wait" || player.phase === "ready") paintReady();
   else if (player.phase === "running") paintRunning();
   else if (player.phase === "done") paintDone();
   else if (player.phase === "fled") paintFled();
@@ -607,7 +608,7 @@ function paintEntry() {
     wnd("", '<form id="entryForm" autocomplete="off"><div class="stat"><span class="k">なまえ</span><input id="name" maxlength="10" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="ここに なまえ" value="' + esc(nameDraft) + '"></div>' +
       '<div class="stat"><span class="k">キャラ</span><span id="selname">' + esc(CHARACTERS[selected].name) + "</span></div>" +
       '<p id="emsg" class="bad"></p><div class="gap"></div><div class="grid" id="grid">' + cells + "</div>" +
-      '<div class="gap"></div><button type="submit" class="cmd" id="go"><span class="cur bl">▶</span>エントリーする</button></form>') +
+      '<div class="gap"></div><button type="submit" class="stop" id="go">エントリー</button></form>') +
     "</div>";
   document.getElementById("entryForm").addEventListener("submit", onEntry);
   document.getElementById("grid").addEventListener("click", function (e) {
@@ -653,7 +654,7 @@ async function onEntry(e) {
     if (!r || !r.ok) throw new Error("ng");
     sfx.levelUp();
     player.id = r.id; player.name = r.name || name; player.charId = r.charId;
-    player.targetSec = r.targetSec || 15; player.phase = "wait";
+    player.targetSec = r.targetSec || 15; player.phase = "joined";
     player.sendState = "idle"; player.elapsedMs = null;
     saveSession();
     entering = false;
@@ -666,14 +667,33 @@ async function onEntry(e) {
   }
 }
 
-function paintWait() {
+function paintJoined() {
   var ch = charBy(player.charId);
-  app.innerHTML = '<div class="phone"><h1 class="logo">待機中</h1><p class="sub">' + esc(player.name) + "</p>" +
+  app.innerHTML = '<div class="phone"><h1 class="logo">エントリーした</h1><p class="sub">' + esc(player.name) + "</p>" +
     wnd("", '<div class="hero">' + svgOf(ch, 72) + "<div><div class=\"pname\">" + esc(player.name) + "</div><div class=\"job\">" + esc(ch.name) + "</div></div></div>" +
-      '<p class="center" id="waitMsg">スタートを待っています</p><p class="huge" id="waitNum"></p>' +
-      '<button type="button" class="cmd" id="redo"><span class="cur" style="visibility:hidden">▶</span>なまえを いれなおす</button>') +
+      '<p class="center">つぎの画面で 計測スタート</p>' +
+      '<button type="button" class="stop" id="toStart">つぎへ</button>') +
     "</div>";
-  document.getElementById("redo").onclick = onRedo;
+  document.getElementById("toStart").onclick = function () {
+    player.phase = "ready";
+    saveSession();
+    renderPlayer();
+  };
+}
+
+function paintReady() {
+  var ch = charBy(player.charId);
+  app.innerHTML = '<div class="phone"><h1 class="logo">計測スタート</h1><p class="sub">' + esc(player.name) + "</p>" +
+    wnd("", '<div class="hero">' + svgOf(ch, 72) + "<div><div class=\"pname\">" + esc(player.name) + "</div><div class=\"job\">" + esc(ch.name) + "</div></div></div>" +
+      '<p class="center">もくひょう <span id="readyTarget">' + player.targetSec + "</span>びょう</p>" +
+      '<button type="button" class="stop" id="startBtn">計測スタート</button>') +
+    "</div>";
+  var btn = document.getElementById("startBtn");
+  var okAt = Date.now() + 500;
+  btn.onclick = function () {
+    if (Date.now() < okAt) return;
+    onStart();
+  };
 }
 
 function paintRunning() {
@@ -878,35 +898,18 @@ function paintSendNote(text, retry) {
 }
 
 var targetTimer = null;
-var goTimer = null;
 function startTargetPoll() {
   if (targetTimer) return;
   targetTimer = setInterval(refreshTarget, 1000);
 }
-function armGo(c) {
-  if (goTimer || !c || !c.goAt) return;
-  var offset = Number(c.now) - Date.now();
-  var fireAt = Number(c.goAt) - (isFinite(offset) ? offset : 0);
-  function tick() {
-    goTimer = null;
-    if (player.phase !== "wait" && player.phase !== "ready") return;
-    var left = fireAt - Date.now();
-    if (left <= 0) { onStart(); return; }
-    var msg = document.getElementById("waitMsg");
-    var num = document.getElementById("waitNum");
-    if (msg) msg.textContent = "まもなくはじまる";
-    if (num) num.textContent = String(Math.ceil(left / 1000));
-    goTimer = setTimeout(tick, 200);
-  }
-  tick();
-}
 async function refreshTarget() {
-  if (player.phase !== "wait" && player.phase !== "ready") return;
+  if (player.phase !== "joined" && player.phase !== "wait" && player.phase !== "ready") return;
   try {
     var c = await api({ action: "config" });
     if (!c || !c.ok) return;
     if (c.targetSec >= 10 && c.targetSec <= 30) player.targetSec = c.targetSec;
-    if (c.gate === "go" && c.goAt) armGo(c);
+    var goal = document.getElementById("readyTarget");
+    if (goal) goal.textContent = String(player.targetSec);
   } catch (e) {}
 }
 
@@ -1086,7 +1089,6 @@ function renderSetup() {
   state.mode = "setup";
   partySig = "";
   resetArm = false;
-  goArm = false;
   app.innerHTML = '<div class="screen board">' + eventTitle() +
     '<p class="sub"><span id="conn" class="g">接続中</span></p>' +
     localBanner() +
@@ -1097,7 +1099,6 @@ function renderSetup() {
     wnd("参加用QR", '<div id="qr"></div>') +
     '<div class="ops">' +
       '<button type="button" class="main" id="showBtn">画面に映す</button>' +
-      '<button type="button" class="main" id="goBtn">計測スタート</button>' +
       '<button type="button" id="resultBtn">結果を映す</button>' +
       '<button type="button" id="dummyBtn">ダミーを入れる</button>' +
       '<button type="button" id="resetBtn">参加者を消す</button>' +
@@ -1107,7 +1108,6 @@ function renderSetup() {
   document.getElementById("upBtn").onclick = function () { bump(1); };
   document.getElementById("downBtn").onclick = function () { bump(-1); };
   document.getElementById("showBtn").onclick = function () { renderDisplay(true); };
-  document.getElementById("goBtn").onclick = beginRound;
   document.getElementById("resultBtn").onclick = function () { startResults(); };
   document.getElementById("dummyBtn").onclick = function () {
     withAdmin(async function () { await api({ action: "dummies" }); await poll(); });
@@ -1118,27 +1118,6 @@ function renderSetup() {
   paintConn();
 }
 
-var goArm = false;
-function beginRound() {
-  var btn = document.getElementById("goBtn");
-  if (!goArm) {
-    goArm = true;
-    if (btn) btn.textContent = "5びょう後にはじめる";
-    return;
-  }
-  goArm = false;
-  if (btn) btn.textContent = "計測スタート";
-  withAdmin(async function () {
-    var r = await api({ action: "begin" });
-    var btn = document.getElementById("goBtn");
-    if (!r || !r.ok) {
-      if (btn) btn.textContent = "スクリプトを更新して";
-      return;
-    }
-    if (btn) btn.textContent = "スタートした";
-    await poll();
-  });
-}
 function onReset() {
   var btn = document.getElementById("resetBtn");
   if (!resetArm) {
@@ -1498,13 +1477,13 @@ function bootPlayer() {
   if (player.sendState === "sending") player.sendState = "idle";
   var lostClock = player.phase === "running";
   if (lostClock) { player.phase = "fled"; player.elapsedMs = null; saveSession(); }
-  if (player.phase === "ready") player.phase = "wait";
+  if (player.phase === "wait") player.phase = "ready";
   renderPlayer();
   armVisibility();
   startTargetPoll();
   if (lostClock) sendResult(true);
   else if ((player.phase === "done" || player.phase === "fled") && player.sendState !== "sent") sendResult(player.phase === "fled");
-  else if (player.phase === "wait") refreshTarget();
+  else if (player.phase === "joined" || player.phase === "ready") refreshTarget();
 }
 
 if (isAdmin) bootAdmin();
