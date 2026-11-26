@@ -17,7 +17,7 @@
   2. ウェブアプリとしてデプロイ（実行:自分 / アクセス:全員）
   3. 下の GAS_URL に末尾が /exec のURLを貼る
   4. このファイルを GitHub Pages の index.html として公開
-  会場スクリーンは ?admin=1
+  会場スクリーンは ?admin=1 （設定してから「画面に映す」）
 -->
 <style>
   :root { color-scheme: dark; }
@@ -131,6 +131,12 @@
   #qr img, #qr canvas { display: block; }
   .url { word-break: break-all; font-size: 12px; line-height: 1.4; user-select: text; -webkit-user-select: text; text-align: center; }
   .center { text-align: center; }
+  .step { display: flex; justify-content: center; gap: 12px; margin-top: 8px; }
+  .step button { width: 72px; height: 48px; border: 2px solid #FFFFFF; font-size: 28px; line-height: 1; }
+  .ops { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0 20px; }
+  .ops button { min-height: 52px; border: 2px solid #FFFFFF; padding: 8px; font-size: 18px; }
+  .ops button.main { border-color: #FACC15; color: #FACC15; }
+  .sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); border: 0; }
   .gap { height: 8px; }
   body.flash { background: #FFFFFF; }
   body.flash #app { visibility: hidden; }
@@ -931,22 +937,16 @@ var partySig = "";
 var pollTimer = null;
 var polling = false;
 var adminBusy = false;
-var menuCursor = 3;
 var resetArm = false;
 var show = null;
 
-var MENU = [
-  { id: "up", label: "もくひょうを ふやす" },
-  { id: "down", label: "もくひょうを へらす" },
-  { id: "dummy", label: "ダミーを 10にん よぶ" },
-  { id: "result", label: "けっかを はっぴょう" },
-  { id: "reset", label: "なかまを かいさんする" },
-  { id: "full", label: "ぜんがめん" }
-];
+function eventTitle() {
+  return '<h1 class="logo">エスイノベーション忘年会2026</h1><p class="sub">たいないどけいチャレンジ</p>';
+}
 
 function bootAdmin() {
-  document.title = "ルイーダの さかば";
-  renderLobby();
+  document.title = "エスイノベーション忘年会2026";
+  renderSetup();
   if (!pollTimer) {
     poll();
     pollTimer = setInterval(poll, 3000);
@@ -956,26 +956,69 @@ function bootAdmin() {
   });
 }
 
-function renderLobby() {
-  state.mode = "lobby";
+function renderSetup() {
+  state.mode = "setup";
   partySig = "";
   resetArm = false;
-  app.innerHTML = '<div class="screen"><h1 class="logo">ルイーダの さかば</h1><p class="sub">たいないどけい チャレンジ　<span id="conn" class="g">接続中</span></p>' +
+  app.innerHTML = '<div class="screen">' + eventTitle() +
+    '<p class="sub"><span id="conn" class="g">接続中</span></p>' +
     localBanner() +
-    '<div class="top"><div>' + wnd("さんか", '<p class="center">スマホで よみこめ</p><div id="qr"></div><p class="url" id="joinurl"></p>') +
-    '</div><div>' + wnd("もくひょう", '<p class="huge" id="targetBig">' + state.target + '</p><p class="center">びょう（10〜30）</p><p id="counts" class="center"></p>') +
-    "</div></div>" +
+    wnd("目標", '<p class="huge" id="targetBig">' + state.target + '</p><p class="center">びょう（10〜30）</p>' +
+      '<div class="step"><button type="button" id="downBtn">−</button><button type="button" id="upBtn">＋</button></div>' +
+      '<p id="counts" class="center"></p>') +
+    wnd("参加用QR", '<div id="qr"></div><p class="url" id="joinurl"></p>') +
     '<div id="party" class="party"></div>' +
-    wnd("コマンド", '<div id="menu">' + MENU.map(function (m, i) {
-      var on = i === menuCursor;
-      return '<button type="button" class="cmd" data-act="' + m.id + '"><span class="cur' + (on ? " bl" : "") + '" style="visibility:' + (on ? "visible" : "hidden") + '">▶</span><span class="lbl">' + m.label + "</span></button>";
-    }).join("") + '<p class="job">↑↓ で せんたく　Enter で けってい</p></div>') +
-    "</div>";
+    '<div class="ops">' +
+      '<button type="button" class="main" id="showBtn">画面に映す</button>' +
+      '<button type="button" id="resultBtn">結果を映す</button>' +
+      '<button type="button" id="dummyBtn">ダミーを入れる</button>' +
+      '<button type="button" id="resetBtn">参加者を消す</button>' +
+    "</div></div>";
   makeQr();
-  document.getElementById("menu").addEventListener("click", onMenuClick);
+  document.getElementById("upBtn").onclick = function () { bump(1); };
+  document.getElementById("downBtn").onclick = function () { bump(-1); };
+  document.getElementById("showBtn").onclick = function () { renderDisplay(true); };
+  document.getElementById("resultBtn").onclick = function () { startResults(); };
+  document.getElementById("dummyBtn").onclick = function () {
+    withAdmin(async function () { await api({ action: "dummies" }); await poll(); });
+  };
+  document.getElementById("resetBtn").onclick = onReset;
   paintTarget();
   paintParty();
   paintConn();
+}
+
+function onReset() {
+  var btn = document.getElementById("resetBtn");
+  if (!resetArm) {
+    resetArm = true;
+    if (btn) btn.textContent = "本当に消す";
+    return;
+  }
+  resetArm = false;
+  if (btn) btn.textContent = "参加者を消す";
+  withAdmin(async function () { await api({ action: "reset" }); await poll(); });
+}
+
+function renderDisplay(goFull) {
+  state.mode = "lobby";
+  partySig = "";
+  app.innerHTML = '<div class="screen">' + eventTitle() +
+    '<p class="bad center" id="conn"></p>' +
+    '<div class="top"><div>' + wnd("", '<p class="center">スマホで参加</p><div id="qr"></div>') +
+    '</div><div>' + wnd("", '<p class="center">目標</p><p class="huge" id="targetBig">' + state.target + '</p><p class="center">びょう</p><p id="counts" class="center"></p>') +
+    "</div></div>" +
+    '<div id="party" class="party"></div></div>';
+  makeQr();
+  paintTarget();
+  paintParty();
+  paintConn();
+  if (goFull) {
+    if (!document.fullscreenElement) {
+      var req = document.documentElement.requestFullscreen();
+      if (req && req.catch) req.catch(function () {});
+    }
+  }
 }
 
 function makeQr() {
@@ -994,7 +1037,12 @@ function makeQr() {
 function paintConn() {
   var el = document.getElementById("conn");
   if (!el) return;
-  if (useLocal()) { el.className = "g"; el.textContent = "れんしゅうモード"; return; }
+  if (state.mode !== "setup") {
+    el.className = "bad";
+    el.textContent = !useLocal() && !state.online ? "接続できない" : "";
+    return;
+  }
+  if (useLocal()) { el.className = "g"; el.textContent = "このブラウザだけの練習"; return; }
   if (state.online) { el.className = "g"; el.textContent = "接続OK"; }
   else { el.className = "bad"; el.textContent = "接続できない"; }
 }
@@ -1013,52 +1061,22 @@ function paintParty() {
   var done = list.filter(function (p) { return p.status === "done"; }).length;
   var ready = list.filter(function (p) { return p.status === "ready"; }).length;
   var fled = list.filter(function (p) { return p.status === "fled"; }).length;
-  if (counts) counts.textContent = "なかま " + list.length + "にん   じゅんび " + done + "   まち " + ready + "   にげ " + fled;
+  if (counts) {
+    counts.textContent = state.mode === "lobby"
+      ? (list.length ? list.length + "人" : "")
+      : ("参加者 " + list.length + "人　終了 " + done + "　計測中 " + ready + "　失格 " + fled);
+  }
   if (sig === partySig) return;
   partySig = sig;
   if (!list.length) {
-    box.innerHTML = wnd("", '<p>まだ だれも いない…<br>さかばは しずかだ。</p>');
+    box.innerHTML = wnd("", '<p class="center">まだだれもいない</p>');
     return;
   }
   box.innerHTML = list.map(function (p) {
     var ch = charBy(p.charId);
-    var st = p.status === "done" ? '<span class="g">じゅんびOK</span>' : p.status === "fled" ? '<span class="bad">にげだした</span>' : "けいそくまち";
+    var st = p.status === "done" ? '<span class="g">終了</span>' : p.status === "fled" ? '<span class="bad">失格</span>' : "計測中";
     return wnd("", '<div class="who">' + svgOf(ch, 64) + '<div><div class="pname">' + esc(p.name) + '</div><div class="job">' + esc(ch.name) + "</div><div>" + st + "</div></div></div>");
   }).join("");
-}
-
-function paintMenu() {
-  var cmds = document.querySelectorAll("#menu .cmd");
-  for (var i = 0; i < cmds.length; i++) {
-    var on = i === menuCursor;
-    var cur = cmds[i].querySelector(".cur");
-    cur.style.visibility = on ? "visible" : "hidden";
-    cur.classList.toggle("bl", on);
-    if (cmds[i].dataset.act === "reset") {
-      cmds[i].querySelector(".lbl").textContent = resetArm ? "ほんとうに かいさんする" : "なかまを かいさんする";
-    }
-  }
-}
-
-async function onMenuClick(e) {
-  var btn = e.target.closest(".cmd");
-  if (!btn || adminBusy) return;
-  var cmds = Array.prototype.slice.call(document.querySelectorAll("#menu .cmd"));
-  menuCursor = cmds.indexOf(btn);
-  if (btn.dataset.act !== "reset") resetArm = false;
-  paintMenu();
-  await sfx.resume();
-  var act = btn.dataset.act;
-  if (act === "up") return bump(1);
-  if (act === "down") return bump(-1);
-  if (act === "dummy") return withAdmin(async function () { sfx.pip(); await api({ action: "dummies" }); await poll(); });
-  if (act === "result") { sfx.pip(); startResults(); return; }
-  if (act === "full") { sfx.pip(); toggleFull(); return; }
-  if (act === "reset") {
-    if (!resetArm) { resetArm = true; sfx.pip(); paintMenu(); return; }
-    resetArm = false;
-    return withAdmin(async function () { sfx.curse(0); await api({ action: "reset" }); await poll(); paintMenu(); });
-  }
 }
 
 async function bump(d) {
@@ -1077,13 +1095,6 @@ async function withAdmin(fn) {
   adminBusy = true;
   try { await fn(); } finally { adminBusy = false; }
 }
-function toggleFull() {
-  if (!document.fullscreenElement) {
-    var p = document.documentElement.requestFullscreen();
-    if (p && p.catch) p.catch(function () {});
-  } else document.exitFullscreen();
-}
-
 async function poll() {
   if (polling) return;
   polling = true;
@@ -1093,8 +1104,8 @@ async function poll() {
     state.online = true;
     state.players = Array.isArray(data.players) ? data.players : [];
     if (data.targetSec >= 10 && data.targetSec <= 30) state.target = data.targetSec;
-    if (state.mode === "lobby") { paintTarget(); paintParty(); paintConn(); }
-    else { paintConn(); paintLate(); paintTarget(); }
+    if (state.mode === "results") { paintConn(); paintLate(); paintTarget(); }
+    else { paintTarget(); paintParty(); paintConn(); }
   } catch (e) {
     state.online = false;
     paintConn();
@@ -1110,20 +1121,18 @@ function startResults() {
     index: 0, done: false, busy: false, fled: fled, target: state.target, snapDone: built.total
   };
   state.mode = "results";
-  var intro = !built.total ? "まだ誰も止めていない" :
-    built.total === 1 ? "結果発表" :
-    built.total === 2 ? "1いとドベ" :
-    "ブービーから発表する";
-  if (fled) intro += "　失格 " + fled + "人";
-  app.innerHTML = '<div class="screen"><h1 class="logo">けっか はっぴょう</h1><p class="sub">もくひょう <span id="resTarget" class="g">' + show.target + 'びょう</span>　<span id="conn"></span></p>' +
-    '<p id="late" class="bad center"></p>' +
-    wnd("メッセージ", '<div class="msg" id="msg"></div>') +
+  var intro = built.total ? "結果発表" : "まだ誰も止めていない";
+  app.innerHTML = '<div class="screen">' + eventTitle() +
+    '<p class="sub">目標 <span id="resTarget" class="g">' + show.target + 'びょう</span></p>' +
+    '<p id="conn" class="bad center"></p>' +
+    '<div class="msg center" id="msg"></div>' +
     '<div id="stack" class="stack"></div><div id="duel"></div>' +
-    wnd("コマンド", '<button type="button" class="cmd" id="nextBtn"><span class="cur bl">▶</span><span id="nextLabel">つぎを はっぴょう</span></button>' +
-      '<button type="button" class="cmd" id="backBtn"><span class="cur" style="visibility:hidden">▶</span>さかばに もどる</button>' +
-      '<p class="job" id="left"></p>') + "</div>";
+    '<button type="button" id="nextBtn" class="sr" tabindex="-1" aria-hidden="true"></button></div>';
   document.getElementById("nextBtn").onclick = nextReveal;
-  document.getElementById("backBtn").onclick = leaveResults;
+  if (!document.fullscreenElement) {
+    var req = document.documentElement.requestFullscreen();
+    if (req && req.catch) req.catch(function () {});
+  }
   paintConn();
   paintNext();
   if (!built.total) document.getElementById("nextBtn").disabled = true;
@@ -1156,8 +1165,7 @@ function leaveResults() {
   typeToken++;
   if (show) show.gen++;
   show = null;
-  sfx.pip();
-  renderLobby();
+  renderDisplay(false);
   poll();
 }
 
@@ -1222,10 +1230,7 @@ function replayShow() {
   if (stack) stack.innerHTML = "";
   if (duel) duel.innerHTML = "";
   paintNext();
-  var intro = !show.total ? "まだ誰も止めていない" :
-    show.total === 2 ? "1いとドベ" :
-    show.total === 1 ? "結果発表" :
-    "ブービーから発表する";
+  var intro = show.total ? "結果発表" : "まだ誰も止めていない";
   typeInto(document.getElementById("msg"), intro);
 }
 
@@ -1239,25 +1244,17 @@ document.addEventListener("keydown", function (e) {
     return;
   }
   if (!isAdmin) return;
-  if (state.mode === "results" && e.key === "Enter") {
-    if (document.activeElement && document.activeElement.tagName === "BUTTON") return;
+  if (e.key === "Escape") {
+    if (document.fullscreenElement) return;
+    if (state.mode === "results") { e.preventDefault(); leaveResults(); }
+    else if (state.mode === "lobby") { e.preventDefault(); renderSetup(); }
+    return;
+  }
+  if (state.mode === "results" && (e.key === "Enter" || e.key === "ArrowRight" || e.key === " ")) {
     var next = document.getElementById("nextBtn");
     if (!next || next.disabled) return;
     e.preventDefault();
     next.click();
-    return;
-  }
-  if (state.mode !== "lobby") return;
-  var cmds = document.querySelectorAll("#menu .cmd");
-  if (!cmds.length) return;
-  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-    e.preventDefault();
-    if (e.key === "ArrowDown") menuCursor = (menuCursor + 1) % cmds.length;
-    else menuCursor = (menuCursor - 1 + cmds.length) % cmds.length;
-    resetArm = false;
-    paintMenu();
-    try { cmds[menuCursor].focus({ preventScroll: true }); } catch (err) {}
-    sfx.resume(); sfx.pip();
   }
 });
 
