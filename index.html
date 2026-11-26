@@ -16,7 +16,7 @@
   1. Code.gs をスプレッドシートの Apps Script に貼り、setup を実行
   2. ウェブアプリとしてデプロイ（実行:自分 / アクセス:全員）
   3. 下の GAS_URL に末尾が /exec のURLを貼る
-  4. このファイルを GitHub Pages の index.html として公開
+  4. Firebase Hosting にこのファイルを公開する
   会場スクリーンは ?admin=1 （設定してから「画面に映す」）
 -->
 <style>
@@ -366,7 +366,6 @@ function uid() {
   });
 }
 function joinUrl() {
-  if (GAS_URL && GAS_URL.indexOf("script.google.com") !== -1) return GAS_URL;
   return location.origin + location.pathname;
 }
 function buzz(ms) { try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {} }
