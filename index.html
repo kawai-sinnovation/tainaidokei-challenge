@@ -113,7 +113,25 @@
   .msg { white-space: pre-wrap; min-height: 2.6em; }
   .note { margin-top: 8px; }
   .top { display: grid; grid-template-columns: 250px 1fr; gap: 12px; align-items: start; }
+  .board { max-width: none; height: 100vh; padding: 4px 12px 8px; display: flex; flex-direction: column; overflow: hidden; }
+  .board .logo { font-size: 26px; margin: 2px 0 0; }
+  .board .sub { margin: 0 0 4px; }
+  .board-row { flex: 1; min-height: 0; display: grid; grid-template-columns: 232px minmax(0, 1fr); gap: 12px; align-items: stretch; }
+  .side { min-height: 0; overflow: auto; }
+  .side .wnd { margin: 6px 0; }
+  .side .wnd .in { padding: 6px 8px; }
+  .goal { color: #FACC15; font-size: 36px; line-height: 1; }
   .party { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+  .board .party { height: 100%; min-height: 0; align-content: start; gap: 8px; }
+  .board .party .wnd { margin: 0; }
+  .board .party .wnd .in { padding: 4px 8px; display: flex; align-items: center; height: 100%; }
+  .board .who svg { width: 40px; height: 40px; }
+  .board .pname { font-size: 16px; }
+  .board .party.dense .job { display: none; }
+  .board .party.dense .who { gap: 6px; }
+  .board .party.dense .who > div { display: flex; gap: 6px; align-items: baseline; min-width: 0; }
+  .board .party.dense .who svg { width: 28px; height: 28px; }
+  .board .party.dense .pname { font-size: 14px; white-space: nowrap; overflow: hidden; }
   .who { display: flex; gap: 10px; align-items: center; }
   .who svg { width: 64px; height: 64px; flex: none; }
   .who.big { align-items: center; }
@@ -145,6 +163,11 @@
     .top, .duel { grid-template-columns: 1fr; }
     .logo { font-size: 24px; }
     .huge { font-size: 52px; }
+  }
+  @media (max-width: 560px) {
+    .board { height: auto; overflow: visible; }
+    .board-row { grid-template-columns: 1fr; }
+    .board .party { height: auto; }
   }
 </style>
 </head>
@@ -954,26 +977,28 @@ function bootAdmin() {
   window.addEventListener("storage", function (e) {
     if (e.key === LS_KEY) poll();
   });
+  window.addEventListener("resize", fitParty);
 }
 
 function renderSetup() {
   state.mode = "setup";
   partySig = "";
   resetArm = false;
-  app.innerHTML = '<div class="screen">' + eventTitle() +
+  app.innerHTML = '<div class="screen board">' + eventTitle() +
     '<p class="sub"><span id="conn" class="g">接続中</span></p>' +
     localBanner() +
-    wnd("目標", '<p class="huge" id="targetBig">' + state.target + '</p><p class="center">びょう（10〜30）</p>' +
+    '<div class="board-row"><div class="side">' +
+    wnd("目標", '<p class="center"><span class="goal" id="targetBig">' + state.target + '</span> びょう</p>' +
       '<div class="step"><button type="button" id="downBtn">−</button><button type="button" id="upBtn">＋</button></div>' +
       '<p id="counts" class="center"></p>') +
-    wnd("参加用QR", '<div id="qr"></div><p class="url" id="joinurl"></p>') +
-    '<div id="party" class="party"></div>' +
+    wnd("参加用QR", '<div id="qr"></div>') +
     '<div class="ops">' +
       '<button type="button" class="main" id="showBtn">画面に映す</button>' +
       '<button type="button" id="resultBtn">結果を映す</button>' +
       '<button type="button" id="dummyBtn">ダミーを入れる</button>' +
       '<button type="button" id="resetBtn">参加者を消す</button>' +
-    "</div></div>";
+    "</div></div>" +
+    '<div id="party" class="party"></div></div></div>';
   makeQr();
   document.getElementById("upBtn").onclick = function () { bump(1); };
   document.getElementById("downBtn").onclick = function () { bump(-1); };
@@ -1003,12 +1028,12 @@ function onReset() {
 function renderDisplay(goFull) {
   state.mode = "lobby";
   partySig = "";
-  app.innerHTML = '<div class="screen">' + eventTitle() +
+  app.innerHTML = '<div class="screen board">' + eventTitle() +
     '<p class="bad center" id="conn"></p>' +
-    '<div class="top"><div>' + wnd("", '<p class="center">スマホで参加</p><div id="qr"></div>') +
-    '</div><div>' + wnd("", '<p class="center">目標</p><p class="huge" id="targetBig">' + state.target + '</p><p class="center">びょう</p><p id="counts" class="center"></p>') +
-    "</div></div>" +
-    '<div id="party" class="party"></div></div>';
+    '<div class="board-row"><div class="side">' +
+    wnd("", '<p class="center">スマホで参加</p><div id="qr"></div>') +
+    wnd("", '<p class="center">目標 <span class="goal" id="targetBig">' + state.target + '</span> びょう</p><p id="counts" class="center"></p>') +
+    '</div><div id="party" class="party"></div></div></div>';
   makeQr();
   paintTarget();
   paintParty();
@@ -1024,8 +1049,6 @@ function renderDisplay(goFull) {
 function makeQr() {
   var el = document.getElementById("qr");
   var url = joinUrl();
-  var label = document.getElementById("joinurl");
-  if (label) label.textContent = url;
   if (!el) return;
   el.innerHTML = "";
   if (typeof QRCode === "undefined") { el.textContent = "QRなし"; el.style.color = "#000"; return; }
@@ -1048,7 +1071,7 @@ function paintConn() {
 }
 function paintTarget() {
   var el = document.getElementById("targetBig");
-  if (el && state.mode === "lobby") el.textContent = String(state.target);
+  if (el) el.textContent = String(state.target);
   var res = document.getElementById("resTarget");
   if (res) res.textContent = (show && show.target ? show.target : state.target) + "びょう";
 }
@@ -1066,17 +1089,47 @@ function paintParty() {
       ? (list.length ? list.length + "人" : "")
       : ("参加者 " + list.length + "人　終了 " + done + "　計測中 " + ready + "　失格 " + fled);
   }
-  if (sig === partySig) return;
-  partySig = sig;
-  if (!list.length) {
-    box.innerHTML = wnd("", '<p class="center">まだだれもいない</p>');
+  if (sig !== partySig) {
+    partySig = sig;
+    if (!list.length) box.innerHTML = wnd("", '<p class="center">まだだれもいない</p>');
+    else box.innerHTML = list.map(function (p) {
+      var ch = charBy(p.charId);
+      var st = p.status === "done" ? '<span class="g">終了</span>' : p.status === "fled" ? '<span class="bad">失格</span>' : "計測中";
+      return wnd("", '<div class="who">' + svgOf(ch, 40) + '<div><div class="pname">' + esc(p.name) + '</div><div class="job">' + esc(ch.name) + "</div><div>" + st + "</div></div></div>");
+    }).join("");
+  }
+  fitParty();
+}
+
+function fitParty() {
+  var box = document.getElementById("party");
+  if (!box || state.mode === "results") return;
+  var n = box.querySelectorAll(":scope > .wnd").length;
+  var w = box.clientWidth;
+  var h = box.clientHeight;
+  if (!n || w < 40 || h < 80) {
+    box.style.gridTemplateColumns = "";
+    box.style.gridTemplateRows = "";
+    box.classList.remove("dense");
     return;
   }
-  box.innerHTML = list.map(function (p) {
-    var ch = charBy(p.charId);
-    var st = p.status === "done" ? '<span class="g">終了</span>' : p.status === "fled" ? '<span class="bad">失格</span>' : "計測中";
-    return wnd("", '<div class="who">' + svgOf(ch, 64) + '<div><div class="pname">' + esc(p.name) + '</div><div class="job">' + esc(ch.name) + "</div><div>" + st + "</div></div></div>");
-  }).join("");
+  var gap = 8;
+  var cols = Math.max(1, Math.min(n, Math.floor((w + gap) / 168)));
+  var rows = Math.ceil(n / cols);
+  var rowH = Math.floor((h - (rows - 1) * gap) / rows);
+  while (rowH < 40 && cols < n) {
+    var nextCols = cols + 1;
+    var nextW = Math.floor((w - (nextCols - 1) * gap) / nextCols);
+    if (nextW < 96) break;
+    cols = nextCols;
+    rows = Math.ceil(n / cols);
+    rowH = Math.floor((h - (rows - 1) * gap) / rows);
+  }
+  if (rowH > 84) rowH = 84;
+  if (rowH < 30) rowH = 30;
+  box.classList.toggle("dense", rowH < 58);
+  box.style.gridTemplateColumns = "repeat(" + cols + ", minmax(0, 1fr))";
+  box.style.gridTemplateRows = "repeat(" + rows + ", " + rowH + "px)";
 }
 
 async function bump(d) {
