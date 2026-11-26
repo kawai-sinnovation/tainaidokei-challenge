@@ -147,6 +147,20 @@
   .num { font-size: 20px; }
   .who.big .num { font-size: 28px; }
   .stack { display: flex; flex-direction: column; gap: 8px; }
+  .result-screen { max-width: none; height: 100vh; display: flex; flex-direction: column; overflow: hidden; padding: 8px 20px 16px; }
+  .reveal { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 28px; align-items: stretch; }
+  .left-half { min-width: 0; min-height: 0; display: flex; gap: 12px; align-items: stretch; }
+  .history { width: 210px; flex: none; min-height: 0; display: flex; flex-direction: column; gap: 6px; overflow: hidden; }
+  .history:empty { display: none; }
+  .history .wnd { margin: 0; flex: 1 1 0; min-height: 0; overflow: hidden; }
+  .history .wnd .in { padding: 4px 8px; height: 100%; display: flex; align-items: center; }
+  .who.mini svg { width: 32px; height: 32px; }
+  .who.mini .pname { font-size: 16px; }
+  .who.mini .num { font-size: 14px; }
+  .spot { flex: 1; min-width: 0; display: flex; align-items: center; }
+  .spot .wnd { width: 100%; margin: 0; }
+  .spot .who.big svg { width: 148px; height: 148px; }
+  .announce { display: flex; align-items: center; justify-content: center; text-align: center; font-size: clamp(32px, 4vw, 64px); line-height: 1.35; white-space: pre-wrap; }
   .duel { display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: stretch; }
   .vs { display: flex; align-items: center; justify-content: center; color: #FACC15; font-size: 22px; padding: 8px; }
   .solo { max-width: 520px; margin: 0 auto; }
@@ -352,6 +366,7 @@ function uid() {
   });
 }
 function joinUrl() {
+  if (GAS_URL && GAS_URL.indexOf("script.google.com") !== -1) return GAS_URL;
   return location.origin + location.pathname;
 }
 function buzz(ms) { try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {} }
@@ -919,17 +934,21 @@ function buildRanking(list) {
   var total = done.length;
   done.forEach(function (p, i) { p.rank = i + 1; p.place = placeName(i + 1, total); });
   var steps = [];
-  if (total === 1) steps.push({ kind: "finale", best: done[0], worst: null });
-  else if (total >= 2) {
-    if (total >= 3) {
-      for (var rank = total - 1; rank >= 2; rank--) steps.push({ kind: "one", p: done[rank - 1] });
-    }
-    steps.push({ kind: "finale", best: done[0], worst: done[total - 1] });
+  if (total >= 3) {
+    for (var rank = total - 1; rank >= 2; rank--) steps.push({ kind: "one", p: done[rank - 1] });
   }
+  if (total >= 2) steps.push({ kind: "one", p: done[total - 1] });
+  if (total >= 1) steps.push({ kind: "one", p: done[0] });
   return { done: done, steps: steps, total: total };
 }
 function announceText(p) {
   return p.place + "　" + p.name;
+}
+function miniHtml(p, total) {
+  var num = p.rank === total || Math.abs(p.errorMs) >= 1500 ? "bad" : "g";
+  var ch = charBy(p.charId);
+  return wnd(esc(p.place), '<div class="who mini">' + svgOf(ch, 32) +
+    '<div><div class="pname">' + esc(p.name) + '</div><div class="num ' + num + '">' + fmtErr(p.errorMs) + "</div></div></div>");
 }
 function cardHtml(p, total, big, extra) {
   var cls = [];
@@ -1177,15 +1196,16 @@ function startResults() {
   var fled = snap.filter(function (p) { return p.status === "fled"; }).length;
   show = {
     ranking: built.done, steps: built.steps, total: built.total, gen: 1,
-    index: 0, done: false, busy: false, fled: fled, target: state.target, snapDone: built.total
+    index: 0, done: false, busy: false, fled: fled, target: state.target, snapDone: built.total,
+    revealed: []
   };
   state.mode = "results";
   var intro = built.total ? "結果発表" : "まだ誰も止めていない";
-  app.innerHTML = '<div class="screen">' + eventTitle() +
+  app.innerHTML = '<div class="screen result-screen">' + eventTitle() +
     '<p class="sub">目標 <span id="resTarget" class="g">' + show.target + 'びょう</span></p>' +
     '<p id="conn" class="bad center"></p>' +
-    '<div class="msg center" id="msg"></div>' +
-    '<div id="stack" class="stack"></div><div id="duel"></div>' +
+    '<div class="reveal"><div class="left-half"><div id="history" class="history"></div><div id="spot" class="spot"></div></div>' +
+    '<div class="announce" id="msg"></div></div>' +
     '<button type="button" id="nextBtn" class="sr" tabindex="-1" aria-hidden="true"></button></div>';
   document.getElementById("nextBtn").onclick = nextReveal;
   if (!document.fullscreenElement) {
@@ -1237,41 +1257,17 @@ async function nextReveal() {
   show.busy = true;
   paintNext();
   var step = show.steps[show.index++];
+  var person = step.p;
   typeToken++;
   var msg = document.getElementById("msg");
-  if (step.kind === "one") {
-    if (msg) msg.textContent = "";
-    sfx.drum();
-    await sleep(1050);
-    if (!showAlive(gen)) return;
-    if (blessed(step.p, show.total)) sfx.fanfare(); else sfx.curse();
-    var stack = document.getElementById("stack");
-    if (stack) {
-      stack.querySelectorAll(".now").forEach(function (n) { n.classList.remove("now"); });
-      var wrap = document.createElement("div");
-      wrap.innerHTML = cardHtml(step.p, show.total, false, "now");
-      var card = wrap.firstChild;
-      stack.appendChild(card);
-      try { card.scrollIntoView({ block: "nearest" }); } catch (e) {}
-    }
-    await typeInto(msg, announceText(step.p));
-  } else {
-    if (msg) msg.textContent = "";
-    sfx.drum();
-    await sleep(1300);
-    if (!showAlive(gen)) return;
-    var stack2 = document.getElementById("stack");
-    if (stack2) stack2.innerHTML = "";
-    var duel = document.getElementById("duel");
-    if (duel) {
-      if (!step.worst) duel.innerHTML = '<div class="solo">' + cardHtml(step.best, show.total, true) + "</div>";
-      else duel.innerHTML = '<div class="duel">' + cardHtml(step.worst, show.total, true) + '<div class="vs">たいけつ</div>' + cardHtml(step.best, show.total, true) + "</div>";
-    }
-    if (step.worst) { sfx.curse(); sfx.fanfare(0.45); }
-    else sfx.fanfare();
-    var text = !step.worst ? announceText(step.best) : ("ドベ　" + step.worst.name + "\n1い　" + step.best.name);
-    await typeInto(msg, text);
-  }
+  if (msg) msg.textContent = "";
+  sfx.drum();
+  await sleep(700);
+  if (!showAlive(gen) || !person) return;
+  show.revealed.push(person);
+  paintShown();
+  if (blessed(person, show.total)) sfx.fanfare(); else sfx.curse();
+  await typeInto(msg, announceText(person));
   if (!showAlive(gen)) return;
   if (show.index >= show.steps.length) show.done = true;
   show.busy = false;
@@ -1280,14 +1276,20 @@ async function nextReveal() {
   if (nb) { try { nb.focus({ preventScroll: true }); } catch (e) {} }
 }
 
+function paintShown() {
+  var history = document.getElementById("history");
+  var spot = document.getElementById("spot");
+  if (!history || !spot || !show) return;
+  var past = show.revealed.slice(0, -1);
+  var current = show.revealed[show.revealed.length - 1];
+  history.innerHTML = past.map(function (p) { return miniHtml(p, show.total); }).join("");
+  spot.innerHTML = current ? cardHtml(current, show.total, true, "now") : "";
+}
 function replayShow() {
   if (!show) return;
   sfx.pip();
-  show.index = 0; show.done = false; show.busy = false;
-  var stack = document.getElementById("stack");
-  var duel = document.getElementById("duel");
-  if (stack) stack.innerHTML = "";
-  if (duel) duel.innerHTML = "";
+  show.index = 0; show.done = false; show.busy = false; show.revealed = [];
+  paintShown();
   paintNext();
   var intro = show.total ? "結果発表" : "まだ誰も止めていない";
   typeInto(document.getElementById("msg"), intro);

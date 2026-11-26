@@ -11,8 +11,10 @@
  *    - 種類: ウェブアプリ
  *    - 次のユーザーとして実行: 自分
  *    - アクセスできるユーザー: 全員   ←「全員（匿名）」相当。ログイン必須にしない
- * 5. 発行されたURL（末尾が /exec）をコピーする
- * 6. index.html 先頭付近の GAS_URL にそのURLを貼って保存し、GitHub Pages へ上げる
+ * 5. 同じプロジェクトに HTML ファイル「index」を追加し、index.html の中身を貼る
+ * 6. 発行されたURL（末尾が /exec）をコピーする
+ *    このURLをスマホで開くと参加画面になる。会場スクリーンのQRもこのURL
+ * 7. index.html 先頭付近の GAS_URL にそのURLを貼って保存し、GitHub Pages へ上げる
  *
  * コードを直したあとは「デプロイを管理」→ 鉛筆 → バージョン「新しいバージョン」で
  * 更新すること。同じ /exec URLのまま反映される。/dev URLは使わない（ログインが要る）。
@@ -36,7 +38,13 @@ function setup() {
 }
 
 function doGet(e) {
-  return handle_((e && e.parameter) || {});
+  var p = (e && e.parameter) || {};
+  if (!p.action) {
+    return HtmlService.createHtmlOutputFromFile('index')
+      .setTitle('エスイノベーション忘年会2026')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  }
+  return handle_(p);
 }
 
 function doPost(e) {
