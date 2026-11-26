@@ -113,10 +113,15 @@
   .msg { white-space: pre-wrap; min-height: 2.6em; }
   .note { margin-top: 8px; }
   .top { display: grid; grid-template-columns: 250px 1fr; gap: 12px; align-items: start; }
-  .board { max-width: none; height: 100vh; padding: 4px 12px 8px; display: flex; flex-direction: column; overflow: hidden; }
-  .board .logo { font-size: 26px; margin: 2px 0 0; }
-  .board .sub { margin: 0 0 4px; }
+  .board { max-width: none; height: 100vh; padding: 4px 16px 8px; display: flex; flex-direction: column; overflow: hidden; }
+  .logo.big { font-size: clamp(28px, 5.6vw, 84px); line-height: 1.15; margin: 4px 0 0; }
+  .sub.big { font-size: clamp(18px, 3.6vw, 56px); margin: 2px 0 6px; }
   .board-row { flex: 1; min-height: 0; display: grid; grid-template-columns: 232px minmax(0, 1fr); gap: 12px; align-items: stretch; }
+  .board.show .board-row { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 48px; align-items: center; }
+  .board.show .side { display: flex; flex-direction: column; justify-content: center; height: 100%; overflow: hidden; }
+  .board.show .side .wnd .in { padding: 8px; }
+  .board.show #qr { width: min(100%, calc(100vh - 220px)); height: auto; aspect-ratio: 1; margin: 4px auto; }
+  .board.show #qr canvas, .board.show #qr img { width: 100% !important; height: auto !important; }
   .side { min-height: 0; overflow: auto; }
   .side .wnd { margin: 6px 0; }
   .side .wnd .in { padding: 6px 8px; }
@@ -166,7 +171,7 @@
   }
   @media (max-width: 560px) {
     .board { height: auto; overflow: visible; }
-    .board-row { grid-template-columns: 1fr; }
+    .board-row, .board.show .board-row { grid-template-columns: 1fr; }
     .board .party { height: auto; }
   }
 </style>
@@ -964,7 +969,7 @@ var resetArm = false;
 var show = null;
 
 function eventTitle() {
-  return '<h1 class="logo">エスイノベーション忘年会2026</h1><p class="sub">たいないどけいチャレンジ</p>';
+  return '<h1 class="logo big">エスイノベーション忘年会2026</h1><p class="sub big">たいないどけいチャレンジ</p>';
 }
 
 function bootAdmin() {
@@ -1028,7 +1033,7 @@ function onReset() {
 function renderDisplay(goFull) {
   state.mode = "lobby";
   partySig = "";
-  app.innerHTML = '<div class="screen board">' + eventTitle() +
+  app.innerHTML = '<div class="screen board show">' + eventTitle() +
     '<p class="bad center" id="conn"></p>' +
     '<div class="board-row"><div class="side">' +
     wnd("", '<p class="center">スマホで参加</p><div id="qr"></div>') +
@@ -1053,7 +1058,8 @@ function makeQr() {
   el.innerHTML = "";
   if (typeof QRCode === "undefined") { el.textContent = "QRなし"; el.style.color = "#000"; return; }
   try {
-    new QRCode(el, { text: url, width: 168, height: 168, colorDark: "#000000", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.M });
+    var size = el.closest(".show") ? 520 : 168;
+    new QRCode(el, { text: url, width: size, height: size, colorDark: "#000000", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.M });
   } catch (e) { el.textContent = url; }
 }
 
