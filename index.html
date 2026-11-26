@@ -176,19 +176,20 @@
   .stage-mid.board-on { overflow: auto; justify-content: center; }
   .versus { display: flex; justify-content: center; gap: 28px; align-items: stretch; }
   .versus .wnd { flex: 1 1 240px; max-width: 360px; margin: 0; }
-  .final { width: 100%; display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; align-items: flex-end; }
-  .final .feature { flex: 1 1 280px; max-width: 420px; }
-  .final .plain { flex: 1 1 180px; max-width: 240px; }
-  .final .wnd { margin: 0; }
-  .final .who { align-items: center; min-width: 0; }
-  .final .who > div:last-child { min-width: 0; }
-  .final .pname, .final .num { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .final .feature .who svg { width: 88px; height: 88px; }
-  .final .feature .rankmark { font-size: 36px; }
-  .final .feature .pname { font-size: 28px; }
-  .final .plain .who svg { width: 40px; height: 40px; }
-  .final .plain .rankmark { font-size: 20px; min-width: 20px; }
-  .final .plain .pname { font-size: 16px; }
+  .final { width: 100%; display: flex; flex-wrap: wrap; gap: 10px 12px; justify-content: center; align-items: stretch; }
+  .final .feature { flex: 1 1 420px; max-width: 100%; }
+  .final .plain { flex: 1 1 320px; max-width: 100%; }
+  .final .wnd { margin: 0; height: 100%; }
+  .final .wnd .in { padding: 6px 10px; }
+  .final .who { align-items: center; }
+  .final .pname, .final .num { white-space: nowrap; }
+  .final .feature .who svg { width: 72px; height: 72px; }
+  .final .feature .rankmark { font-size: 32px; min-width: 2.4em; }
+  .final .feature .pname { font-size: 26px; }
+  .final .plain .who svg { width: 36px; height: 36px; }
+  .final .plain .rankmark { font-size: 18px; min-width: 3.2em; }
+  .final .plain .rankmark.long { font-size: 16px; min-width: 4.6em; }
+  .final .plain .pname { font-size: 18px; }
   .duel { display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: stretch; }
   .vs { display: flex; align-items: center; justify-content: center; color: #FACC15; font-size: 22px; padding: 8px; }
   .solo { max-width: 520px; margin: 0 auto; }
@@ -1143,12 +1144,6 @@ function renderDisplay(goFull) {
   paintTarget();
   paintParty();
   paintConn();
-  if (goFull) {
-    if (!document.fullscreenElement) {
-      var req = document.documentElement.requestFullscreen();
-      if (req && req.catch) req.catch(function () {});
-    }
-  }
 }
 
 function makeQr() {
@@ -1288,10 +1283,6 @@ function startResults() {
     '<div class="reveal"><div id="history" class="history"></div><div class="stage-mid"><div id="spot" class="spot"></div><div class="announce" id="msg"></div></div></div>' +
     '<button type="button" id="nextBtn" class="sr" tabindex="-1" aria-hidden="true"></button></div>';
   document.getElementById("nextBtn").onclick = nextReveal;
-  if (!document.fullscreenElement) {
-    var req = document.documentElement.requestFullscreen();
-    if (req && req.catch) req.catch(function () {});
-  }
   paintConn();
   paintNext();
   if (!built.total) document.getElementById("nextBtn").disabled = true;
@@ -1412,7 +1403,7 @@ function paintVersus(pair) {
   setStage("versus");
   spot.innerHTML = '<div class="versus">' + pair.map(mysteryHtml).join("") + "</div>";
   msg.className = "announce place";
-  msg.textContent = "どっちどっち？";
+  msg.innerHTML = "優勝 or ドベ";
 }
 function paintBoard() {
   var spot = document.getElementById("spot");
