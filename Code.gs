@@ -20,7 +20,7 @@
  *
  * シート:
  *   players … 参加者
- *   config  … targetSec（10〜30）
+ *   config  … targetSec（10〜30）、gate（wait/go）、goAt（計測開始の時刻）
  */
 
 var PLAYER_HEADERS = [
@@ -77,9 +77,10 @@ function handle_(p) {
 
 function dispatch_(action, p) {
   switch (action) {
-    case 'ping': return { ok: true, targetSec: getTarget_() };
-    case 'config': return { ok: true, targetSec: getTarget_() };
-    case 'list': return { ok: true, targetSec: getTarget_(), players: readPlayers_() };
+    case 'ping':
+    case 'config': return clock_();
+    case 'list': return listPayload_();
+    case 'begin': return begin_();
     case 'entry': return entry_(p);
     case 'cancel': return cancel_(p);
     case 'submit': return submit_(p);
@@ -150,6 +151,46 @@ function getTarget_() {
   }
   sh.appendRow(['targetSec', 15]);
   return 15;
+}
+
+function configValue_(key, fallback) {
+  var sh = config_();
+  var vals = sh.getDataRange().getValues();
+  for (var i = 1; i < vals.length; i++) {
+    if (String(vals[i][0]) === key) return vals[i][1];
+  }
+  return fallback;
+}
+
+function setConfigValue_(key, value) {
+  var sh = config_();
+  var vals = sh.getDataRange().getValues();
+  for (var i = 1; i < vals.length; i++) {
+    if (String(vals[i][0]) === key) {
+      sh.getRange(i + 1, 2).setValue(value);
+      return;
+    }
+  }
+  sh.appendRow([key, value]);
+}
+
+function clock_() {
+  var gate = String(configValue_('gate', 'wait') || 'wait');
+  var goAt = Number(configValue_('goAt', 0)) || 0;
+  return { ok: true, targetSec: getTarget_(), gate: gate, goAt: goAt, now: Date.now() };
+}
+
+function listPayload_() {
+  var payload = clock_();
+  payload.players = readPlayers_();
+  return payload;
+}
+
+function begin_() {
+  var goAt = Date.now() + 5000;
+  setConfigValue_('gate', 'go');
+  setConfigValue_('goAt', goAt);
+  return clock_();
 }
 
 function setTarget_(p) {
@@ -276,6 +317,8 @@ function resetAll_() {
   var sh = players_();
   var last = sh.getLastRow();
   if (last > 1) sh.getRange(2, 1, last - 1, PLAYER_HEADERS.length).clearContent();
+  setConfigValue_('gate', 'wait');
+  setConfigValue_('goAt', 0);
   return { ok: true };
 }
 

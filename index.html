@@ -170,6 +170,25 @@
   .announce.win { color: #FACC15; font-size: clamp(80px, 14vw, 180px); }
   .announce.dobe { color: #EF4444; font-size: clamp(80px, 14vw, 180px); }
   .announce.name { font-size: clamp(48px, 8vw, 112px); }
+  .stage-mid.versus-on { justify-content: flex-end; padding: 0 24px 28px 340px; }
+  .stage-mid.versus-on .announce { order: 1; }
+  .stage-mid.versus-on .spot { order: 2; width: 100%; }
+  .stage-mid.board-on { overflow: auto; justify-content: center; }
+  .versus { display: flex; justify-content: center; gap: 28px; align-items: stretch; }
+  .versus .wnd { flex: 1 1 240px; max-width: 360px; margin: 0; }
+  .final { width: 100%; display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; align-items: flex-end; }
+  .final .feature { flex: 1 1 280px; max-width: 420px; }
+  .final .plain { flex: 1 1 180px; max-width: 240px; }
+  .final .wnd { margin: 0; }
+  .final .who { align-items: center; min-width: 0; }
+  .final .who > div:last-child { min-width: 0; }
+  .final .pname, .final .num { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .final .feature .who svg { width: 88px; height: 88px; }
+  .final .feature .rankmark { font-size: 36px; }
+  .final .feature .pname { font-size: 28px; }
+  .final .plain .who svg { width: 40px; height: 40px; }
+  .final .plain .rankmark { font-size: 20px; min-width: 20px; }
+  .final .plain .pname { font-size: 16px; }
   .duel { display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: stretch; }
   .vs { display: flex; align-items: center; justify-content: center; color: #FACC15; font-size: 22px; padding: 8px; }
   .solo { max-width: 520px; margin: 0 auto; }
@@ -401,10 +420,21 @@ function localApi(p) {
   var s = loadLocal();
   if (!(s.targetSec >= 10 && s.targetSec <= 30)) s.targetSec = 15;
   var action = p.action || "list";
-  if (action === "ping" || action === "config") return { ok: true, targetSec: s.targetSec };
+  function clock() {
+    return { ok: true, targetSec: s.targetSec, gate: s.gate || "wait", goAt: s.goAt || 0, now: Date.now() };
+  }
+  if (action === "ping" || action === "config") return clock();
+  if (action === "begin") {
+    s.gate = "go";
+    s.goAt = Date.now() + 5000;
+    saveLocal(s);
+    return clock();
+  }
   if (action === "list") {
     var players = s.players.slice().sort(function (a, b) { return a.createdAt - b.createdAt; });
-    return { ok: true, targetSec: s.targetSec, players: players };
+    var listed = clock();
+    listed.players = players;
+    return listed;
   }
   if (action === "setTarget") {
     var n = parseInt(p.targetSec, 10);
@@ -464,7 +494,9 @@ function localApi(p) {
     saveLocal(s);
     return { ok: true, added: DUMMIES.length, targetSec: s.targetSec };
   }
-  if (action === "reset") { s.players = []; saveLocal(s); return { ok: true }; }
+  if (action === "reset") {
+    s.players = []; s.gate = "wait"; s.goAt = 0; saveLocal(s); return { ok: true };
+  }
   return { ok: false, error: "unknown" };
 }
 
@@ -557,7 +589,7 @@ function renderPlayer() {
   if (renderedPhase === player.phase) return;
   renderedPhase = player.phase;
   if (player.phase === "entry") paintEntry();
-  else if (player.phase === "ready") paintReady();
+  else if (player.phase === "wait" || player.phase === "ready") paintWait();
   else if (player.phase === "running") paintRunning();
   else if (player.phase === "done") paintDone();
   else if (player.phase === "fled") paintFled();
@@ -621,7 +653,7 @@ async function onEntry(e) {
     if (!r || !r.ok) throw new Error("ng");
     sfx.levelUp();
     player.id = r.id; player.name = r.name || name; player.charId = r.charId;
-    player.targetSec = r.targetSec || 15; player.phase = "ready";
+    player.targetSec = r.targetSec || 15; player.phase = "wait";
     player.sendState = "idle"; player.elapsedMs = null;
     saveSession();
     entering = false;
@@ -634,16 +666,13 @@ async function onEntry(e) {
   }
 }
 
-function paintReady() {
+function paintWait() {
   var ch = charBy(player.charId);
-  app.innerHTML = '<div class="phone"><h1 class="logo">体内時計<br>チャレンジ</h1><p class="sub">' + esc(player.name) + "</p>" +
+  app.innerHTML = '<div class="phone"><h1 class="logo">待機中</h1><p class="sub">' + esc(player.name) + "</p>" +
     wnd("", '<div class="hero">' + svgOf(ch, 72) + "<div><div class=\"pname\">" + esc(player.name) + "</div><div class=\"job\">" + esc(ch.name) + "</div></div></div>" +
-      '<p class="center">もくひょう</p><p class="huge" id="targetBig">' + player.targetSec + "びょう</p>" +
-      '<p class="bad center">アプリを切りかえると失格</p>' +
-      '<button type="button" class="stop" id="start">スタート</button>' +
+      '<p class="center" id="waitMsg">スタートを待っています</p><p class="huge" id="waitNum"></p>' +
       '<button type="button" class="cmd" id="redo"><span class="cur" style="visibility:hidden">▶</span>なまえを いれなおす</button>') +
     "</div>";
-  document.getElementById("start").onclick = onStart;
   document.getElementById("redo").onclick = onRedo;
 }
 
@@ -756,7 +785,7 @@ function paintFled() {
 }
 
 function onStart() {
-  if (player.phase !== "ready") return;
+  if (player.phase !== "wait" && player.phase !== "ready") return;
   sfx.resume(); sfx.pip();
   player.phase = "running";
   player.t0 = performance.now();
@@ -849,19 +878,35 @@ function paintSendNote(text, retry) {
 }
 
 var targetTimer = null;
+var goTimer = null;
 function startTargetPoll() {
   if (targetTimer) return;
-  targetTimer = setInterval(refreshTarget, 3000);
+  targetTimer = setInterval(refreshTarget, 1000);
+}
+function armGo(c) {
+  if (goTimer || !c || !c.goAt) return;
+  var offset = Number(c.now) - Date.now();
+  var fireAt = Number(c.goAt) - (isFinite(offset) ? offset : 0);
+  function tick() {
+    goTimer = null;
+    if (player.phase !== "wait" && player.phase !== "ready") return;
+    var left = fireAt - Date.now();
+    if (left <= 0) { onStart(); return; }
+    var msg = document.getElementById("waitMsg");
+    var num = document.getElementById("waitNum");
+    if (msg) msg.textContent = "まもなくはじまる";
+    if (num) num.textContent = String(Math.ceil(left / 1000));
+    goTimer = setTimeout(tick, 200);
+  }
+  tick();
 }
 async function refreshTarget() {
-  if (player.phase !== "ready") return;
+  if (player.phase !== "wait" && player.phase !== "ready") return;
   try {
     var c = await api({ action: "config" });
-    if (c && c.ok && c.targetSec >= 10 && c.targetSec <= 30) {
-      player.targetSec = c.targetSec;
-      var el = document.getElementById("targetBig");
-      if (el) el.textContent = c.targetSec + "びょう";
-    }
+    if (!c || !c.ok) return;
+    if (c.targetSec >= 10 && c.targetSec <= 30) player.targetSec = c.targetSec;
+    if (c.gate === "go" && c.goAt) armGo(c);
   } catch (e) {}
 }
 
@@ -942,11 +987,18 @@ function buildRanking(list) {
   var total = done.length;
   done.forEach(function (p, i) { p.rank = i + 1; p.place = placeName(i + 1, total); });
   var steps = [];
+  var winner = total >= 1 ? done[0] : null;
+  var dobe = total >= 2 ? done[total - 1] : null;
   if (total >= 3) {
     for (var rank = total - 1; rank >= 2; rank--) steps.push({ kind: "one", p: done[rank - 1] });
   }
-  if (total >= 2) steps.push({ kind: "one", p: done[total - 1] });
-  if (total >= 1) steps.push({ kind: "one", p: done[0] });
+  if (winner && dobe) {
+    var pair = Math.random() < 0.5 ? [winner, dobe] : [dobe, winner];
+    steps.push({ kind: "versus", pair: pair });
+    steps.push({ kind: "one", p: dobe });
+  }
+  if (winner) steps.push({ kind: "one", p: winner });
+  if (total >= 1) steps.push({ kind: "board" });
   return { done: done, steps: steps, total: total };
 }
 function titleOf(p) {
@@ -961,6 +1013,20 @@ function miniHtml(p, total) {
   if (bad) mark += " bad";
   return wnd("", '<div class="who mini"><div class="rankmark' + mark + '">' + esc(p.place) + "</div>" + svgOf(ch, 32) +
     '<div><div class="pname">' + esc(p.name) + '</div><div class="num ' + num + '">' + fmtErr(p.errorMs) + "</div></div></div>");
+}
+function boardCard(p, total, feature) {
+  var ch = charBy(p.charId);
+  var bad = p.rank === total && total > 1;
+  var mark = p.place.length >= 4 ? " long" : "";
+  if (bad) mark += " bad";
+  var frame = feature ? (p.rank === 1 ? "gold" : "red") : "";
+  var detail = feature
+    ? '<div class="num ' + (bad ? "bad" : "g") + '">' + fmtErr(p.errorMs) + "</div>"
+    : "";
+  return wnd("", '<div class="who">' +
+    '<div class="rankmark' + mark + '">' + esc(p.place) + "</div>" +
+    svgOf(ch, feature ? 96 : 48) +
+    '<div><div class="pname">' + esc(p.name) + "</div>" + detail + "</div></div>", frame);
 }
 function cardHtml(p, total, big, extra) {
   var cls = [];
@@ -1020,6 +1086,7 @@ function renderSetup() {
   state.mode = "setup";
   partySig = "";
   resetArm = false;
+  goArm = false;
   app.innerHTML = '<div class="screen board">' + eventTitle() +
     '<p class="sub"><span id="conn" class="g">接続中</span></p>' +
     localBanner() +
@@ -1030,6 +1097,7 @@ function renderSetup() {
     wnd("参加用QR", '<div id="qr"></div>') +
     '<div class="ops">' +
       '<button type="button" class="main" id="showBtn">画面に映す</button>' +
+      '<button type="button" class="main" id="goBtn">計測スタート</button>' +
       '<button type="button" id="resultBtn">結果を映す</button>' +
       '<button type="button" id="dummyBtn">ダミーを入れる</button>' +
       '<button type="button" id="resetBtn">参加者を消す</button>' +
@@ -1039,6 +1107,7 @@ function renderSetup() {
   document.getElementById("upBtn").onclick = function () { bump(1); };
   document.getElementById("downBtn").onclick = function () { bump(-1); };
   document.getElementById("showBtn").onclick = function () { renderDisplay(true); };
+  document.getElementById("goBtn").onclick = beginRound;
   document.getElementById("resultBtn").onclick = function () { startResults(); };
   document.getElementById("dummyBtn").onclick = function () {
     withAdmin(async function () { await api({ action: "dummies" }); await poll(); });
@@ -1049,6 +1118,27 @@ function renderSetup() {
   paintConn();
 }
 
+var goArm = false;
+function beginRound() {
+  var btn = document.getElementById("goBtn");
+  if (!goArm) {
+    goArm = true;
+    if (btn) btn.textContent = "5びょう後にはじめる";
+    return;
+  }
+  goArm = false;
+  if (btn) btn.textContent = "計測スタート";
+  withAdmin(async function () {
+    var r = await api({ action: "begin" });
+    var btn = document.getElementById("goBtn");
+    if (!r || !r.ok) {
+      if (btn) btn.textContent = "スクリプトを更新して";
+      return;
+    }
+    if (btn) btn.textContent = "スタートした";
+    await poll();
+  });
+}
 function onReset() {
   var btn = document.getElementById("resetBtn");
   if (!resetArm) {
@@ -1260,26 +1350,40 @@ function leaveResults() {
 }
 
 async function nextReveal() {
-  if (!show || show.busy) return;
-  if (show.done || show.index >= show.steps.length) { replayShow(); return; }
+  if (!show || show.busy || show.done) return;
+  if (show.index >= show.steps.length) return;
+  typeToken++;
   var gen = show.gen;
-  var person = show.steps[show.index].p;
-  if (!person) return;
+  var step = show.steps[show.index];
   show.busy = true;
   try {
-    if (show.centerMode !== "title") {
-      show.holding = person;
-      show.centerMode = "title";
+    if (step.kind === "versus") {
+      show.holding = null;
+      show.centerMode = "versus";
       paintHistory();
-      paintCenter(person, "title");
-      if (show.total > 1 && person.rank === show.total) flashWhite();
-    } else {
-      show.revealed.push(person);
-      show.centerMode = "name";
+      paintVersus(step.pair);
       show.index++;
-      if (show.index >= show.steps.length) show.done = true;
-      paintHistory();
-      paintCenter(person, "name");
+    } else if (step.kind === "board") {
+      show.centerMode = "board";
+      paintBoard();
+      show.index++;
+      show.done = true;
+    } else if (step.p) {
+      var person = step.p;
+      var same = show.centerMode === "title" && show.holding && show.holding.id === person.id;
+      if (!same) {
+        show.holding = person;
+        show.centerMode = "title";
+        paintHistory();
+        paintCenter(person, "title");
+        if (show.total > 1 && person.rank === show.total) flashWhite();
+      } else {
+        show.revealed.push(person);
+        show.centerMode = "name";
+        show.index++;
+        paintHistory();
+        paintCenter(person, "name");
+      }
     }
   } finally {
     if (showAlive(gen)) show.busy = false;
@@ -1292,10 +1396,20 @@ function paintHistory() {
   var list = show.revealed.slice().sort(function (a, b) { return a.rank - b.rank; });
   history.innerHTML = list.map(function (p) { return miniHtml(p, show.total); }).join("");
 }
+function setStage(mode) {
+  var mid = document.querySelector(".stage-mid");
+  if (mid) {
+    mid.classList.toggle("versus-on", mode === "versus");
+    mid.classList.toggle("board-on", mode === "board");
+  }
+  var spot = document.getElementById("spot");
+  if (spot && mode !== "versus") spot.style.width = "";
+}
 function paintCenter(p, mode) {
   var spot = document.getElementById("spot");
   var msg = document.getElementById("msg");
   if (!spot || !msg || !p) return;
+  setStage("");
   var finale = p.rank === 1 ? " win" : show.total > 1 && p.rank === show.total ? " dobe" : "";
   if (mode === "title") {
     spot.innerHTML = "";
@@ -1306,6 +1420,35 @@ function paintCenter(p, mode) {
   spot.innerHTML = cardHtml(p, show.total, true, "now");
   msg.className = "announce name" + finale;
   msg.textContent = p.name;
+}
+function mysteryHtml(p) {
+  var ch = charBy(p.charId);
+  return wnd("", '<div class="who"><div class="rankmark">？</div>' + svgOf(ch, 72) +
+    '<div><div class="pname">' + esc(p.name) + "</div></div></div>");
+}
+function paintVersus(pair) {
+  var spot = document.getElementById("spot");
+  var msg = document.getElementById("msg");
+  if (!spot || !msg) return;
+  setStage("versus");
+  spot.innerHTML = '<div class="versus">' + pair.map(mysteryHtml).join("") + "</div>";
+  msg.className = "announce place";
+  msg.textContent = "どっちどっち？";
+}
+function paintBoard() {
+  var spot = document.getElementById("spot");
+  var msg = document.getElementById("msg");
+  var history = document.getElementById("history");
+  if (history) history.innerHTML = "";
+  if (msg) { msg.className = "announce"; msg.textContent = ""; }
+  if (!spot || !show) return;
+  setStage("board");
+  spot.style.width = "100%";
+  var list = show.ranking.slice().sort(function (a, b) { return a.rank - b.rank; });
+  spot.innerHTML = '<div class="final">' + list.map(function (p) {
+    var feature = p.rank === 1 || (show.total > 1 && p.rank === show.total);
+    return '<div class="' + (feature ? "feature" : "plain") + '">' + boardCard(p, show.total, feature) + "</div>";
+  }).join("") + "</div>";
 }
 function flashWhite() {
   document.body.classList.add("flash");
@@ -1355,12 +1498,13 @@ function bootPlayer() {
   if (player.sendState === "sending") player.sendState = "idle";
   var lostClock = player.phase === "running";
   if (lostClock) { player.phase = "fled"; player.elapsedMs = null; saveSession(); }
+  if (player.phase === "ready") player.phase = "wait";
   renderPlayer();
   armVisibility();
   startTargetPoll();
   if (lostClock) sendResult(true);
   else if ((player.phase === "done" || player.phase === "fled") && player.sendState !== "sent") sendResult(player.phase === "fled");
-  else if (player.phase === "ready") refreshTarget();
+  else if (player.phase === "wait") refreshTarget();
 }
 
 if (isAdmin) bootAdmin();
